@@ -135,6 +135,47 @@ export RISHA_AUTH_HEADER="Bearer ..."
 
 ## Quick Start
 
+After you install the skill or command and export your Risha credentials, the normal entry point should be the agent itself, not raw Python commands.
+
+### OpenClaw
+
+Prompt OpenClaw with the skill name and your task, for example:
+
+```text
+Use risha-content-generator to check my Risha account, refresh the capability catalog, and show me which Arabic voice-over and TTS capabilities are available.
+```
+
+```text
+Use risha-content-generator to inspect the video generation capabilities on my account and tell me the required inputs, estimated credits, and remaining balance before generation.
+```
+
+### Claude Code
+
+Run the Claude Code command and describe the workflow you want, for example:
+
+```text
+/risha-content-generator check my Risha account, refresh the catalog, and list the available Arabic dialect, TTS, music, image, and video capabilities.
+```
+
+```text
+/risha-content-generator inspect capability 16, explain its required fields, and estimate the credit cost before generating anything.
+```
+
+### What The Agent Should Handle
+
+The agent should be able to:
+
+- validate authentication
+- refresh or inspect the capability catalog
+- inspect one capability and its required fields
+- check creator, dialect, and voice choices
+- estimate credits before generation
+- generate content only when asked
+
+## Manual Helper Usage
+
+If you want to call the helper directly for debugging or local scripting, you can still use the Python CLI:
+
 Validate the account:
 
 ```bash
@@ -162,15 +203,6 @@ Estimate credits before generation:
 python3 scripts/risha_api.py estimate \
   --capability-id 16 \
   --prompt-data-file /absolute/path/prompt-data.json
-```
-
-Generate content:
-
-```bash
-python3 scripts/risha_api.py generate \
-  --capability-id 16 \
-  --prompt-data-file /absolute/path/prompt-data.json \
-  --wait
 ```
 
 ## Notes
