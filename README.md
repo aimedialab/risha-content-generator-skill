@@ -1,3 +1,13 @@
+<table>
+  <tr>
+    <td align="center" bgcolor="#111111">
+      <a href="https://www.risha.ai/">
+        <img src="https://risha.ai/logos/Risha-Logo-White.png" alt="Risha" width="220" />
+      </a>
+    </td>
+  </tr>
+</table>
+
 # Risha Content Generator Skill
 
 OpenClaw skill and Claude Code command for discovering and executing [Risha.ai](https://www.risha.ai/) capabilities from a local helper script.
