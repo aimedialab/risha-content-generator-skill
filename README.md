@@ -2,7 +2,7 @@
   <tr>
     <td align="center" bgcolor="#111111">
       <a href="https://www.risha.ai/">
-        <img src="https://risha.ai/logos/Risha-Logo-White.png" alt="Risha" width="220" />
+        <img src="https://dashboard.risha.ai/_next/image?url=%2Fimages%2Flogo%2FRisha-Logo-White.png&w=256&q=75" alt="Risha" width="220" />
       </a>
     </td>
   </tr>
