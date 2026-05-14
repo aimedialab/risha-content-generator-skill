@@ -1,6 +1,6 @@
 ---
 name: risha-content-generator
-description: Discover, prepare, and execute any Risha.ai capability available to the authenticated account. Use when Codex needs to authenticate to a Risha workspace, load a ready-to-use catalog of accessible capabilities, inspect manual field definitions, inspect creator, dialect, or voice choices, submit capability requests, poll async jobs, or fetch generated text, audio, image, video, or multimodal outputs from Risha.
+description: Discover, prepare, and execute any Risha.ai capability available to the authenticated account. This package is designed for both OpenClaw and Claude Code workflows. Use when Codex needs to authenticate to a Risha workspace, load a ready-to-use catalog of accessible capabilities, inspect manual field definitions, inspect creator, dialect, or voice choices, submit capability requests, poll async jobs, or fetch generated text, audio, image, video, or multimodal outputs from Risha.
 ---
 
 # Risha Content Generator

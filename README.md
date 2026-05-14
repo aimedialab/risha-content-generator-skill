@@ -1,8 +1,8 @@
 # Risha Content Generator Skill
 
-OpenClaw skill for discovering and executing [Risha.ai](https://www.risha.ai/) capabilities from a local helper script.
+OpenClaw skill and Claude Code command for discovering and executing [Risha.ai](https://www.risha.ai/) capabilities from a local helper script.
 
-This skill is useful when you want OpenClaw to:
+This package is useful when you want OpenClaw or Claude Code to:
 
 - authenticate against a Risha account
 - inspect the capabilities available to that account
@@ -10,16 +10,29 @@ This skill is useful when you want OpenClaw to:
 - estimate credits before generation
 - run text, image, audio, and video generations through Risha
 
+## Supported Capability Types
+
+The package is designed to help with a broad set of Risha capability workflows, including:
+
+- Arabic voice-over and dialect-aware content generation
+- text-to-speech and speech-oriented workflows
+- image generation and image-based multimodal generation
+- video generation and video-oriented multimodal workflows
+- music and audio generation flows
+- creator-driven text generation and scripted content generation
+- capability discovery, credit estimation, and generated asset retrieval
+
 ## What Is Included
 
 - [`SKILL.md`](./SKILL.md): the skill instructions used by OpenClaw
-- [`agents/openai.yaml`](./agents/openai.yaml): skill registration metadata
+- [`agents/openai.yaml`](./agents/openai.yaml): OpenClaw skill registration metadata
+- [`.claude/commands/risha-content-generator.md`](./.claude/commands/risha-content-generator.md): Claude Code slash command
 - [`scripts/risha_api.py`](./scripts/risha_api.py): helper CLI for auth, catalog refresh, estimation, and generation
 - [`references/current-capabilities.json`](./references/current-capabilities.json): bundled capability snapshot
 - [`references/current-capabilities.md`](./references/current-capabilities.md): readable capability inventory
 - [`references/risha-api.md`](./references/risha-api.md): API notes and endpoint reference
 
-## Install
+## Install For OpenClaw
 
 Clone or copy the `risha-content-generator` folder into your OpenClaw skills directory so the final path looks like:
 
@@ -46,6 +59,29 @@ After installation, OpenClaw should be able to discover the skill by name:
 risha-content-generator
 ```
 
+## Install For Claude Code
+
+Clone or copy this repository somewhere local, then copy the Claude command file into your Claude Code commands directory so the final path looks like:
+
+```text
+<your-project>/.claude/commands/risha-content-generator.md
+```
+
+Example:
+
+```bash
+mkdir -p .claude/commands
+cp /absolute/path/to/risha-content-generator/.claude/commands/risha-content-generator.md .claude/commands/risha-content-generator.md
+```
+
+The command expects the helper script and references to stay available from the cloned repository. The easiest setup is to keep the repository on disk and update the absolute paths inside the Claude command file if you move it to a different machine or folder.
+
+After installation, Claude Code can use:
+
+```text
+/risha-content-generator
+```
+
 ## Create Your Risha Account
 
 Register from the official Risha website:
@@ -54,12 +90,12 @@ Register from the official Risha website:
 
 Then click `Get Started Free` and create your account with an email address and password.
 
-Important:
+Important for both OpenClaw and Claude Code:
 
 - Do not use Google sign-in.
 - Do not use Meta sign-in.
 
-This skill authenticates to Risha capabilities using:
+This package authenticates to Risha capabilities using:
 
 - `RISHA_EMAIL`
 - `RISHA_PASSWORD`
@@ -132,11 +168,16 @@ python3 scripts/risha_api.py generate \
 - The skill uses a bundled capability snapshot for fast discovery, but you can refresh it live from your own account.
 - Capability availability depends on the authenticated Risha account.
 - Credit estimation is built in so you can see projected usage before generation.
+- OpenClaw uses the skill metadata in `SKILL.md` and `agents/openai.yaml`.
+- Claude Code uses the slash command in `.claude/commands/risha-content-generator.md`.
 
 ## Repository Structure
 
 ```text
 risha-content-generator/
+├── .claude/
+│   └── commands/
+│       └── risha-content-generator.md
 ├── README.md
 ├── SKILL.md
 ├── agents/
