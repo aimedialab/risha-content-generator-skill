@@ -38,6 +38,9 @@ The package is designed to help with a broad set of Risha capability workflows, 
 - [`agents/openai.yaml`](./agents/openai.yaml): OpenClaw skill registration metadata
 - [`.claude/commands/risha-content-generator.md`](./.claude/commands/risha-content-generator.md): Claude Code slash command
 - [`scripts/risha_api.py`](./scripts/risha_api.py): helper CLI for auth, catalog refresh, estimation, and generation
+- [`scripts/install_daily_refresh.py`](./scripts/install_daily_refresh.py): installs a daily capability refresh scheduler
+- [`scripts/refresh_catalog_job.py`](./scripts/refresh_catalog_job.py): scheduler runner that refreshes the catalog snapshot
+- [`scripts/uninstall_daily_refresh.py`](./scripts/uninstall_daily_refresh.py): removes the installed daily refresh scheduler
 - [`references/current-capabilities.json`](./references/current-capabilities.json): bundled capability snapshot
 - [`references/current-capabilities.md`](./references/current-capabilities.md): readable capability inventory
 - [`references/risha-api.md`](./references/risha-api.md): API notes and endpoint reference
@@ -69,6 +72,14 @@ After installation, OpenClaw should be able to discover the skill by name:
 risha-content-generator
 ```
 
+Optional:
+
+If you want the installed skill to keep its bundled capability snapshot fresh every day, run:
+
+```bash
+python3 scripts/install_daily_refresh.py --email "you@example.com" --password "your-password"
+```
+
 ## Install For Claude Code
 
 Clone or copy this repository somewhere local, then copy the Claude command file into your Claude Code commands directory so the final path looks like:
@@ -90,6 +101,14 @@ After installation, Claude Code can use:
 
 ```text
 /risha-content-generator
+```
+
+Optional:
+
+If you want the installed command package to refresh Risha capabilities daily, run:
+
+```bash
+python3 /absolute/path/to/risha-content-generator/scripts/install_daily_refresh.py --email "you@example.com" --password "your-password"
 ```
 
 ## Create Your Risha Account
@@ -133,6 +152,39 @@ If you already have a working authorization header, you can use:
 export RISHA_AUTH_HEADER="Bearer ..."
 ```
 
+## Daily Capability Refresh
+
+The package can install a daily scheduled refresh that pulls the latest capabilities from your Risha account and rewrites:
+
+- `references/current-capabilities.json`
+- `references/current-capabilities.md`
+
+On macOS, the installer creates a `launchd` job. On Linux, it installs a user `cron` entry. In both cases it also writes a per-user credential file with mode `0600`, so the scheduler can authenticate without depending on an interactive shell session.
+
+Install the daily refresh job:
+
+```bash
+python3 scripts/install_daily_refresh.py --email "you@example.com" --password "your-password"
+```
+
+Use a custom time:
+
+```bash
+python3 scripts/install_daily_refresh.py --email "you@example.com" --password "your-password" --hour 4 --minute 30
+```
+
+Use an authorization header instead of email/password:
+
+```bash
+python3 scripts/install_daily_refresh.py --auth-header "Bearer ..."
+```
+
+Remove the scheduled job:
+
+```bash
+python3 scripts/uninstall_daily_refresh.py
+```
+
 ## Quick Start
 
 After you install the skill or command and export your Risha credentials, the normal entry point should be the agent itself, not raw Python commands.
@@ -149,6 +201,10 @@ Use risha-content-generator to check my Risha account, refresh the capability ca
 Use risha-content-generator to inspect the video generation capabilities on my account and tell me the required inputs, estimated credits, and remaining balance before generation.
 ```
 
+```text
+Use risha-content-generator to install a daily capability refresh job that pulls the latest Risha catalog every day at 4:00 AM.
+```
+
 ### Claude Code
 
 Run the Claude Code command and describe the workflow you want, for example:
@@ -161,12 +217,17 @@ Run the Claude Code command and describe the workflow you want, for example:
 /risha-content-generator inspect capability 16, explain its required fields, and estimate the credit cost before generating anything.
 ```
 
+```text
+/risha-content-generator install a daily refresh job for my Risha capabilities and keep the local catalog updated every morning.
+```
+
 ### What The Agent Should Handle
 
 The agent should be able to:
 
 - validate authentication
 - refresh or inspect the capability catalog
+- install or remove the daily catalog refresh scheduler when asked
 - inspect one capability and its required fields
 - check creator, dialect, and voice choices
 - estimate credits before generation
@@ -212,6 +273,7 @@ python3 scripts/risha_api.py estimate \
 - Credit estimation is built in so you can see projected usage before generation.
 - OpenClaw uses the skill metadata in `SKILL.md` and `agents/openai.yaml`.
 - Claude Code uses the slash command in `.claude/commands/risha-content-generator.md`.
+- The optional daily refresh scheduler updates the bundled capability snapshot automatically once per day.
 
 ## Repository Structure
 
@@ -229,5 +291,8 @@ risha-content-generator/
 │   ├── current-capabilities.md
 │   └── risha-api.md
 └── scripts/
-    └── risha_api.py
+    ├── install_daily_refresh.py
+    ├── refresh_catalog_job.py
+    ├── risha_api.py
+    └── uninstall_daily_refresh.py
 ```

@@ -17,6 +17,8 @@ Use this skill to drive Risha's capability workflow from discovery through final
 6. Submit a generation request and poll until it finishes.
 7. Return the final generated content or explain the failure clearly.
 
+If the user asks for automatic catalog syncing, install the packaged daily refresh scheduler instead of telling them to run one-off catalog commands forever.
+
 ## Choose Auth Mode
 
 Prefer one of these auth approaches:
@@ -86,6 +88,41 @@ The current account snapshot includes 17 accessible capabilities across:
 - `tts`
 
 Treat the snapshot as the fast path and the live `catalog` command as the refresh path.
+
+## Daily Scheduler
+
+When the user wants the skill to keep the capability snapshot fresh automatically, use the packaged scheduler scripts:
+
+- `scripts/install_daily_refresh.py`
+- `scripts/refresh_catalog_job.py`
+- `scripts/uninstall_daily_refresh.py`
+
+Use the installer to create a daily refresh job:
+
+```bash
+python3 scripts/install_daily_refresh.py --email "user@example.com" --password "secret" --hour 4 --minute 0
+```
+
+Or, if the user already has a stable auth header:
+
+```bash
+python3 scripts/install_daily_refresh.py --auth-header "Bearer ..."
+```
+
+Behavior:
+
+- On macOS, the installer creates a `launchd` job under `~/Library/LaunchAgents/`.
+- On Linux, the installer writes a user `crontab` entry.
+- The installer stores scheduler credentials in a per-user `0600` env file outside the repository so the job can run without an interactive shell.
+- The refresh job updates both bundled catalog files:
+  - `references/current-capabilities.json`
+  - `references/current-capabilities.md`
+
+If the user asks to remove the scheduler:
+
+```bash
+python3 scripts/uninstall_daily_refresh.py
+```
 
 ## Inspect Creator Choices When Needed
 
