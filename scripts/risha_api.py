@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import mimetypes
 import os
 from pathlib import Path
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -16,6 +18,7 @@ import urllib.request
 from copy import deepcopy
 from http.cookies import SimpleCookie
 from typing import Any
+import uuid
 
 
 DEFAULT_BASE_URL = "https://adminxcore-api.risha.ai/api"
@@ -45,6 +48,91 @@ def merge_nested_path(target: dict[str, Any], path: str, value: Any) -> None:
             )
         cursor = existing
     cursor[parts[-1]] = value
+
+
+def parse_manual_path(path: str) -> list[str | int]:
+    tokens: list[str | int] = []
+    buffer = ""
+    index = 0
+
+    while index < len(path):
+        char = path[index]
+        if char == ".":
+            if buffer:
+                tokens.append(buffer)
+                buffer = ""
+            index += 1
+            continue
+        if char == "[":
+            if buffer:
+                tokens.append(buffer)
+                buffer = ""
+            closing = path.find("]", index)
+            if closing == -1:
+                raise RishaClientError(f"Invalid field path '{path}': missing closing bracket.")
+            raw_index = path[index + 1 : closing].strip()
+            if not raw_index.isdigit():
+                raise RishaClientError(f"Invalid field path '{path}': array index must be numeric.")
+            tokens.append(int(raw_index))
+            index = closing + 1
+            continue
+        buffer += char
+        index += 1
+
+    if buffer:
+        tokens.append(buffer)
+    return tokens
+
+
+def get_nested_path(target: Any, path: str) -> Any:
+    cursor = target
+    for token in parse_manual_path(path):
+        if isinstance(token, int):
+            if not isinstance(cursor, list) or token >= len(cursor):
+                return None
+            cursor = cursor[token]
+        else:
+            if not isinstance(cursor, dict) or token not in cursor:
+                return None
+            cursor = cursor[token]
+    return cursor
+
+
+def set_nested_path(target: Any, path: str, value: Any) -> None:
+    tokens = parse_manual_path(path)
+    if not tokens:
+        raise RishaClientError("Manual field path cannot be empty.")
+
+    cursor = target
+    for current, next_token in zip(tokens, tokens[1:]):
+        if isinstance(current, int):
+            if not isinstance(cursor, list):
+                raise RishaClientError(f"Cannot assign array path '{path}' into a non-list value.")
+            while len(cursor) <= current:
+                cursor.append({} if isinstance(next_token, str) else [])
+            if cursor[current] is None:
+                cursor[current] = {} if isinstance(next_token, str) else []
+            cursor = cursor[current]
+            continue
+
+        if not isinstance(cursor, dict):
+            raise RishaClientError(f"Cannot assign object path '{path}' into a non-object value.")
+        if current not in cursor or cursor[current] is None:
+            cursor[current] = {} if isinstance(next_token, str) else []
+        cursor = cursor[current]
+
+    last = tokens[-1]
+    if isinstance(last, int):
+        if not isinstance(cursor, list):
+            raise RishaClientError(f"Cannot assign array path '{path}' into a non-list value.")
+        while len(cursor) <= last:
+            cursor.append(None)
+        cursor[last] = value
+        return
+
+    if not isinstance(cursor, dict):
+        raise RishaClientError(f"Cannot assign object path '{path}' into a non-object value.")
+    cursor[last] = value
 
 
 def json_dump(payload: Any) -> str:
@@ -89,6 +177,106 @@ def coerce_number(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def infer_file_content_type(path: str) -> str:
+    guessed, _ = mimetypes.guess_type(path)
+    return guessed or "application/octet-stream"
+
+
+def looks_like_http_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def looks_like_file_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value)
+    return parsed.scheme == "file"
+
+
+def looks_like_data_url(value: str) -> bool:
+    return value.startswith("data:")
+
+
+def looks_like_local_path(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith(("~", "/", "./", "../")):
+        return True
+    if len(value) >= 3 and value[1:3] == ":\\":
+        return True
+    return Path(value).exists()
+
+
+def decode_data_url_to_tempfile(value: str, accepted_file_type: str | None) -> str:
+    header, _, data = value.partition(",")
+    if not header or not data:
+        raise RishaClientError("Invalid data URL provided for file input.")
+
+    mime_type = "application/octet-stream"
+    if ":" in header and ";" in header:
+        mime_type = header.split(":", 1)[1].split(";", 1)[0] or mime_type
+    elif ":" in header:
+        mime_type = header.split(":", 1)[1] or mime_type
+
+    try:
+        content = base64.b64decode(data)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise RishaClientError("Could not decode base64 data URL for file input.") from exc
+
+    extension = mimetypes.guess_extension(mime_type) or ""
+    if not extension and accepted_file_type == "image":
+        extension = ".png"
+    elif not extension and accepted_file_type == "audio":
+        extension = ".wav"
+    elif not extension and accepted_file_type == "video":
+        extension = ".mp4"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as handle:
+        handle.write(content)
+        return handle.name
+
+
+def infer_filename_from_url(url: str, content_type: str, accepted_file_type: str | None) -> str:
+    parsed = urllib.parse.urlparse(url)
+    candidate = Path(urllib.parse.unquote(parsed.path)).name
+    if candidate:
+        return candidate
+
+    extension = mimetypes.guess_extension(content_type) or ""
+    if not extension and accepted_file_type == "image":
+        extension = ".png"
+    elif not extension and accepted_file_type == "audio":
+        extension = ".wav"
+    elif not extension and accepted_file_type == "video":
+        extension = ".mp4"
+    return f"downloaded-file{extension}"
+
+
+def download_url_to_tempfile(url: str, accepted_file_type: str | None) -> str:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "*/*",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request) as response:
+            content_type = response.headers.get("Content-Type", "application/octet-stream").split(";", 1)[0].strip()
+            filename = infer_filename_from_url(response.geturl() or url, content_type, accepted_file_type)
+            suffix = Path(filename).suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
+                handle.write(response.read())
+                return handle.name
+    except urllib.error.HTTPError as exc:
+        if exc.code in {401, 403}:
+            raise RishaClientError(
+                f"File input URL requires authentication or is not publicly accessible: {url}"
+            ) from exc
+        raise RishaClientError(f"Could not download file input URL {url}: HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RishaClientError(f"Could not download file input URL {url}: {exc.reason}") from exc
 
 
 def summarize_choice_field(field: dict[str, Any]) -> str:
@@ -333,6 +521,81 @@ class RishaClient:
                 f"{method.upper()} {path} failed with HTTP {exc.code}: {json_dump(parsed) if parsed is not None else body}"
             ) from exc
 
+    def request_multipart(
+        self,
+        method: str,
+        path: str,
+        *,
+        form_fields: dict[str, str] | None = None,
+        file_fields: dict[str, tuple[str, bytes, str]] | None = None,
+        params: dict[str, Any] | None = None,
+        allow_missing_auth: bool = False,
+    ) -> Any:
+        query = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None}, doseq=True)
+        url = f"{self.base_url}{path}"
+        if query:
+            url = f"{url}?{query}"
+
+        boundary = f"----RishaBoundary{uuid.uuid4().hex}"
+        body = bytearray()
+
+        for name, value in (form_fields or {}).items():
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode("utf-8")
+            )
+
+        for name, (filename, content, content_type) in (file_fields or {}).items():
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(
+                (
+                    f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                    f"Content-Type: {content_type}\r\n\r\n"
+                ).encode("utf-8")
+            )
+            body.extend(content)
+            body.extend(b"\r\n")
+
+        body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "User-Agent": USER_AGENT,
+        }
+
+        auth_header = self.get_auth_header()
+        if auth_header:
+            headers["Authorization"] = auth_header
+
+        if self.cookie_jar:
+            headers["Cookie"] = "; ".join(f"{name}={value}" for name, value in self.cookie_jar.items())
+
+        request = urllib.request.Request(url, data=bytes(body), method=method.upper(), headers=headers)
+        try:
+            with urllib.request.urlopen(request) as response:
+                payload = response.read().decode("utf-8")
+                self._capture_cookies(response.headers)
+                return self._decode_json(payload)
+        except urllib.error.HTTPError as exc:
+            payload = exc.read().decode("utf-8", errors="replace")
+            self._capture_cookies(exc.headers)
+            parsed = self._try_decode_json(payload)
+            if exc.code == 401 and not allow_missing_auth:
+                if not auth_header and not self.cookie_jar:
+                    self.login()
+                    return self.request_multipart(
+                        method,
+                        path,
+                        form_fields=form_fields,
+                        file_fields=file_fields,
+                        params=params,
+                        allow_missing_auth=True,
+                    )
+            raise RishaClientError(
+                f"{method.upper()} {path} failed with HTTP {exc.code}: {json_dump(parsed) if parsed is not None else payload}"
+            ) from exc
+
     def _capture_cookies(self, headers: Any) -> None:
         for header in headers.get_all("Set-Cookie", []):
             cookie = SimpleCookie()
@@ -425,6 +688,125 @@ def build_credit_preview(client: RishaClient, capability_id: int, prompt_data: d
         "projected_remaining_credits": projected_remaining,
         "has_enough_credits": None if projected_remaining is None else projected_remaining >= 0,
     }
+
+
+def upload_asset(
+    client: RishaClient,
+    file_path: str,
+    *,
+    display_name: str | None = None,
+    source: str = "uploaded",
+) -> dict[str, Any]:
+    path_obj = Path(file_path)
+    if not path_obj.is_file():
+        raise RishaClientError(f"Asset file does not exist: {file_path}")
+
+    content = path_obj.read_bytes()
+    filename = path_obj.name
+    response = client.request_multipart(
+        "POST",
+        "/assets/",
+        form_fields={
+            "file_name": display_name or filename,
+            "source": source,
+        },
+        file_fields={
+            "file": (
+                filename,
+                content,
+                infer_file_content_type(str(path_obj)),
+            )
+        },
+    )
+    if not isinstance(response, dict):
+        raise RishaClientError("Asset upload response was not a JSON object.")
+    return response
+
+
+def extract_asset_file_url(payload: dict[str, Any]) -> str | None:
+    for key in ("file_url", "file", "url"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    asset = payload.get("asset")
+    if isinstance(asset, dict):
+        for key in ("file_url", "file", "url"):
+            value = asset.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def normalize_file_field_value(client: RishaClient, value: Any, *, accepted_file_type: str | None, field_path: str) -> str:
+    if not isinstance(value, str):
+        raise RishaClientError(f"File field '{field_path}' must be a string path, URL, or data URL.")
+
+    stripped = value.strip()
+    if not stripped:
+        raise RishaClientError(f"File field '{field_path}' cannot be empty.")
+
+    temp_paths: list[str] = []
+    try:
+        if looks_like_data_url(stripped):
+            upload_path = decode_data_url_to_tempfile(stripped, accepted_file_type)
+            temp_paths.append(upload_path)
+        elif looks_like_http_url(stripped):
+            upload_path = download_url_to_tempfile(stripped, accepted_file_type)
+            temp_paths.append(upload_path)
+        elif looks_like_file_url(stripped):
+            upload_path = urllib.request.url2pathname(urllib.parse.urlparse(stripped).path)
+        elif looks_like_local_path(stripped):
+            upload_path = str(Path(stripped).expanduser().resolve())
+        else:
+            raise RishaClientError(
+                f"File field '{field_path}' must be a local file path, file:// URL, data URL, or publicly downloadable http(s) URL."
+            )
+
+        asset_payload = upload_asset(client, upload_path, source="input_normalized")
+        file_url = extract_asset_file_url(asset_payload)
+        if not file_url:
+            raise RishaClientError(f"Asset upload for file field '{field_path}' did not return a usable file URL.")
+        return file_url
+    finally:
+        for temp_path in temp_paths:
+            try:
+                Path(temp_path).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def normalize_prompt_data_files(client: RishaClient, capability_id: int, prompt_data: dict[str, Any]) -> dict[str, Any]:
+    capability = client.request("GET", f"/customer/capabilities/{capability_id}/")
+    if not isinstance(capability, dict):
+        raise RishaClientError("Capability detail response was not a JSON object.")
+
+    manual = capability.get("manual") or {}
+    fields = manual.get("fields") or []
+    normalized = deepcopy(prompt_data)
+
+    for field in fields:
+        if field.get("field_type") != "input":
+            continue
+        if field.get("json_type") != "file" and not field.get("accepted_file_type"):
+            continue
+
+        field_path = field.get("field_path")
+        if not isinstance(field_path, str) or not field_path:
+            continue
+
+        current_value = get_nested_path(normalized, field_path)
+        if current_value in (None, ""):
+            continue
+
+        normalized_value = normalize_file_field_value(
+            client,
+            current_value,
+            accepted_file_type=field.get("accepted_file_type"),
+            field_path=field_path,
+        )
+        set_nested_path(normalized, field_path, normalized_value)
+
+    return normalized
 
 
 def add_common_auth_args(parser: argparse.ArgumentParser) -> None:
@@ -614,7 +996,11 @@ def wait_for_generation(
 def command_generate(args: argparse.Namespace) -> int:
     client = RishaClient(base_url=args.base_url)
     client.ensure_authenticated()
-    prompt_data = load_prompt_data_from_args(args)
+    prompt_data = normalize_prompt_data_files(
+        client,
+        args.capability_id,
+        load_prompt_data_from_args(args),
+    )
     credit_preview = build_credit_preview(client, args.capability_id, prompt_data)
     request_payload = {
         "capability": args.capability_id,
@@ -664,7 +1050,11 @@ def command_generate(args: argparse.Namespace) -> int:
 def command_estimate(args: argparse.Namespace) -> int:
     client = RishaClient(base_url=args.base_url)
     client.ensure_authenticated()
-    prompt_data = load_prompt_data_from_args(args)
+    prompt_data = normalize_prompt_data_files(
+        client,
+        args.capability_id,
+        load_prompt_data_from_args(args),
+    )
     print(json_dump(build_credit_preview(client, args.capability_id, prompt_data)))
     return 0
 
@@ -680,6 +1070,22 @@ def command_generated_content(args: argparse.Namespace) -> int:
     client = RishaClient(base_url=args.base_url)
     client.ensure_authenticated()
     print(json_dump(client.request("GET", f"/generation-requests/{args.request_id}/generated_content/")))
+    return 0
+
+
+def command_upload_asset(args: argparse.Namespace) -> int:
+    client = RishaClient(base_url=args.base_url)
+    client.ensure_authenticated()
+    print(
+        json_dump(
+            upload_asset(
+                client,
+                args.file_path,
+                display_name=args.display_name,
+                source=args.source,
+            )
+        )
+    )
     return 0
 
 
@@ -729,6 +1135,20 @@ def build_parser() -> argparse.ArgumentParser:
     creators_parser.add_argument("--category", default="text_generation", help="Optional category filter.")
     creators_parser.add_argument("--search", help="Search creator choices.")
     creators_parser.set_defaults(func=command_creators)
+
+    upload_asset_parser = subparsers.add_parser(
+        "upload-asset",
+        help="Upload a local media file to Risha assets and return the created asset record.",
+    )
+    add_common_auth_args(upload_asset_parser)
+    upload_asset_parser.add_argument("file_path", help="Local file path to upload.")
+    upload_asset_parser.add_argument("--display-name", help="Optional asset display name.")
+    upload_asset_parser.add_argument(
+        "--source",
+        default="uploaded",
+        help="Asset source value. Defaults to uploaded.",
+    )
+    upload_asset_parser.set_defaults(func=command_upload_asset)
 
     estimate_parser = subparsers.add_parser(
         "estimate",

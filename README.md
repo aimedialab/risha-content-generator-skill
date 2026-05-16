@@ -32,6 +32,23 @@ The package is designed to help with a broad set of Risha capability workflows, 
 - creator-driven text generation and scripted content generation
 - capability discovery, credit estimation, and generated asset retrieval
 
+## Media Input Safety
+
+For capability fields marked as file inputs, the helper now normalizes the value before it reaches Risha:
+
+- local file paths are uploaded to Risha assets first
+- `file://` URLs are uploaded to Risha assets first
+- `data:` URLs are decoded and uploaded to Risha assets first
+- public `http(s)` media URLs are downloaded and re-uploaded to Risha assets first
+
+This prevents the common failure modes where a workflow sends:
+
+- local workspace paths such as `/data/...` or `/Users/...`
+- temporary proxy or cache URLs
+- provider URLs that later expire
+
+If a media URL requires authentication or is not publicly downloadable, the helper will stop with a clear error instead of sending a bad file reference to Risha.
+
 ## What Is Included
 
 - [`SKILL.md`](./SKILL.md): the skill instructions used by OpenClaw
@@ -230,6 +247,7 @@ The agent should be able to:
 - install or remove the daily catalog refresh scheduler when asked
 - inspect one capability and its required fields
 - check creator, dialect, and voice choices
+- normalize file inputs into Risha-hosted asset URLs before estimate or generation
 - estimate credits before generation
 - generate content only when asked
 
@@ -256,6 +274,12 @@ Inspect one capability:
 
 ```bash
 python3 scripts/risha_api.py capability 16
+```
+
+Upload a local media file to Risha assets directly:
+
+```bash
+python3 scripts/risha_api.py upload-asset /absolute/path/to/input.png
 ```
 
 Estimate credits before generation:

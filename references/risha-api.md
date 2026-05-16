@@ -64,6 +64,16 @@ Use these before generation. The capability object includes a linked `manual`.
 - `POST /user-creators/{id}/upload-file/`
 - `POST /user-creators/{id}/sync/`
 
+### Asset Uploads
+
+- `POST /assets/`
+
+Observed behavior from working client code:
+
+- accepts multipart form uploads
+- returns an asset record that can include a reusable hosted file URL
+- useful for converting local files, `file://` references, downloaded external media, and decoded `data:` URLs into stable Risha-hosted inputs before generation
+
 ### Chat
 
 - `POST /chat/`
@@ -124,6 +134,28 @@ Examples:
 - creators: use the `field_value` from `GET /customer/capabilities/creator-choices/`
 - enum values: use the literal enum entry defined for the field
 
+### File Input Rule
+
+For any manual field where:
+
+- `json_type == "file"`, or
+- `accepted_file_type` is present
+
+do not blindly pass local filesystem paths, temporary cache URLs, or auth-gated provider URLs in `prompt_data`.
+
+Safer workflow:
+
+1. Convert the source into bytes:
+   - local file path
+   - `file://` URL
+   - `data:` URL
+   - public downloadable `http(s)` URL
+2. Upload it to `POST /assets/`
+3. Extract the hosted file URL from the asset response
+4. Use that hosted URL in the final `prompt_data`
+
+If the remote URL requires authentication or cannot be downloaded publicly, fail before generation instead of submitting a broken file reference.
+
 ## Status Model
 
 Generation requests and generated content use these statuses:
@@ -159,8 +191,9 @@ For text workflows, prefer `generated_content.content`.
 2. `python3 scripts/risha_api.py catalog --quiet --write-json references/current-capabilities.json --write-markdown references/current-capabilities.md`
 3. `python3 scripts/risha_api.py capability <id>`
 4. `python3 scripts/risha_api.py creators` when a creator-backed field is present
-5. `python3 scripts/risha_api.py estimate --capability-id <id> --prompt-data-file /absolute/path/prompt.json`
-6. `python3 scripts/risha_api.py generate --capability-id <id> --prompt-data-file /absolute/path/prompt.json --wait`
+5. `python3 scripts/risha_api.py upload-asset /absolute/path/to/file.png` when you need an explicit asset upload
+6. `python3 scripts/risha_api.py estimate --capability-id <id> --prompt-data-file /absolute/path/prompt.json`
+7. `python3 scripts/risha_api.py generate --capability-id <id> --prompt-data-file /absolute/path/prompt.json --wait`
 
 ## Bundled Snapshot
 

@@ -59,6 +59,7 @@ python3 /ABSOLUTE/PATH/TO/risha-content-generator/scripts/install_daily_refresh.
 - Never guess `prompt_data`; inspect the capability first.
 - Use the bundled references as the fast path, then refresh the catalog when needed.
 - If the user wants ongoing automatic refresh, use the installer instead of only running `catalog` once.
+- For file inputs, normalize local paths, `file://` URLs, `data:` URLs, and public media URLs into Risha-hosted asset URLs before estimate or generation.
 - Prefer creator, voice, and dialect values exactly as returned by the helper.
 - Always mention estimated credits and projected remaining credits before a generation step.
 - If login works but no reusable header can be derived, stop and ask for the exact working auth header format.

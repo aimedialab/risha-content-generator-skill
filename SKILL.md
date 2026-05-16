@@ -81,6 +81,15 @@ Use the capability manual to inspect:
 
 Build `prompt_data` from those manual fields. Use the field path exactly as Risha expects. For nested paths such as `input.text`, create nested JSON objects.
 
+For file inputs, do not pass local workspace paths or temporary proxy URLs through unchanged. The helper can normalize file inputs by uploading them to Risha assets first. Use that path whenever the input value is:
+
+- a local file path
+- a `file://` URL
+- a `data:` URL
+- a public downloadable media URL that should become a stable Risha-hosted asset URL
+
+If the URL requires authentication or cannot be downloaded publicly, fail clearly instead of submitting the bad file reference.
+
 The current account snapshot includes 17 accessible capabilities across:
 
 - `multimodal`
@@ -198,6 +207,7 @@ Risha also exposes `/api/chat/` and `/api/chat/stream/`, but the schema does not
 ## Resources
 
 - Use [scripts/risha_api.py](scripts/risha_api.py) for authenticated API calls, capability inspection, catalog refresh, and generation polling.
+- Use `python3 scripts/risha_api.py upload-asset /absolute/path/to/file.png` when you need a direct Risha asset upload.
 - Use [references/risha-api.md](references/risha-api.md) for the endpoint map, auth notes, and payload-building rules derived from the published schema at `https://adminxcore-api.risha.ai/api/docs/?format=openapi`.
 - Use [references/current-capabilities.md](references/current-capabilities.md) as the ready-to-browse capability inventory.
 - Use [references/current-capabilities.json](references/current-capabilities.json) when exact field names and schemas are needed without another API round-trip.
