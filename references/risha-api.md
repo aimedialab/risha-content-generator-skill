@@ -156,6 +156,13 @@ Safer workflow:
 
 If the remote URL requires authentication or cannot be downloaded publicly, fail before generation instead of submitting a broken file reference.
 
+When selecting the final asset URL, prefer a true public origin URL and avoid:
+
+- `https://adminxcore-api.risha.ai/api/media/asset/...`
+- Cloudflare cache or proxy image URLs when a better public URL exists in the same response
+
+If the asset response only exposes private or proxy URLs, fail clearly instead of forwarding them into `prompt_data`.
+
 ## Status Model
 
 Generation requests and generated content use these statuses:

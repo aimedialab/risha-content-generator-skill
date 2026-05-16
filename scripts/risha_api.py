@@ -279,6 +279,69 @@ def download_url_to_tempfile(url: str, accepted_file_type: str | None) -> str:
         raise RishaClientError(f"Could not download file input URL {url}: {exc.reason}") from exc
 
 
+def collect_url_candidates(payload: Any, *, seen: set[int] | None = None) -> list[str]:
+    if seen is None:
+        seen = set()
+
+    results: list[str] = []
+    marker = id(payload)
+    if marker in seen:
+        return results
+    seen.add(marker)
+
+    if isinstance(payload, str):
+        if looks_like_http_url(payload.strip()):
+            results.append(payload.strip())
+        return results
+
+    if isinstance(payload, dict):
+        for value in payload.values():
+            results.extend(collect_url_candidates(value, seen=seen))
+        return results
+
+    if isinstance(payload, list):
+        for item in payload:
+            results.extend(collect_url_candidates(item, seen=seen))
+        return results
+
+    return results
+
+
+def score_asset_url(url: str) -> tuple[int, int]:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+
+    if host == "adminxcore-api.risha.ai" and "/api/media/asset/" in path:
+        return (100, len(url))
+
+    if "/cdn-cgi/image/" in path or "imagedelivery.net" in host or "res.cloudinary.com" in host:
+        return (80, len(url))
+
+    if any(token in host for token in ("s3.amazonaws.com", "amazonaws.com", "cloudfront.net", "storage.googleapis.com")):
+        return (0, len(url))
+
+    return (10, len(url))
+
+
+def choose_preferred_public_url(candidates: list[str]) -> str | None:
+    normalized = []
+    seen = set()
+    for candidate in candidates:
+        cleaned = candidate.strip()
+        if cleaned and cleaned not in seen and looks_like_http_url(cleaned):
+            normalized.append(cleaned)
+            seen.add(cleaned)
+
+    if not normalized:
+        return None
+
+    best = min(normalized, key=score_asset_url)
+    if score_asset_url(best)[0] >= 80:
+        return None
+    return best
+
+
 def summarize_choice_field(field: dict[str, Any]) -> str:
     choice_model = field.get("choice_model")
     if not choice_model:
@@ -724,17 +787,8 @@ def upload_asset(
 
 
 def extract_asset_file_url(payload: dict[str, Any]) -> str | None:
-    for key in ("file_url", "file", "url"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    asset = payload.get("asset")
-    if isinstance(asset, dict):
-        for key in ("file_url", "file", "url"):
-            value = asset.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip()
-    return None
+    candidates = collect_url_candidates(payload)
+    return choose_preferred_public_url(candidates)
 
 
 def normalize_file_field_value(client: RishaClient, value: Any, *, accepted_file_type: str | None, field_path: str) -> str:
@@ -765,7 +819,11 @@ def normalize_file_field_value(client: RishaClient, value: Any, *, accepted_file
         asset_payload = upload_asset(client, upload_path, source="input_normalized")
         file_url = extract_asset_file_url(asset_payload)
         if not file_url:
-            raise RishaClientError(f"Asset upload for file field '{field_path}' did not return a usable file URL.")
+            candidates = collect_url_candidates(asset_payload)
+            raise RishaClientError(
+                f"Asset upload for file field '{field_path}' did not return a usable public URL. "
+                f"Candidates seen: {candidates if candidates else 'none'}"
+            )
         return file_url
     finally:
         for temp_path in temp_paths:
@@ -1076,14 +1134,18 @@ def command_generated_content(args: argparse.Namespace) -> int:
 def command_upload_asset(args: argparse.Namespace) -> int:
     client = RishaClient(base_url=args.base_url)
     client.ensure_authenticated()
+    response = upload_asset(
+        client,
+        args.file_path,
+        display_name=args.display_name,
+        source=args.source,
+    )
     print(
         json_dump(
-            upload_asset(
-                client,
-                args.file_path,
-                display_name=args.display_name,
-                source=args.source,
-            )
+            {
+                "asset": response,
+                "public_url": extract_asset_file_url(response),
+            }
         )
     )
     return 0

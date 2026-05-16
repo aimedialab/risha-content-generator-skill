@@ -90,6 +90,11 @@ For file inputs, do not pass local workspace paths or temporary proxy URLs throu
 
 If the URL requires authentication or cannot be downloaded publicly, fail clearly instead of submitting the bad file reference.
 
+Also reject asset URLs that are only private or proxy forms when selecting the final file URL to send downstream, especially:
+
+- `https://adminxcore-api.risha.ai/api/media/asset/...`
+- Cloudflare cache or proxy image URLs when a real public origin URL is available
+
 The current account snapshot includes 17 accessible capabilities across:
 
 - `multimodal`

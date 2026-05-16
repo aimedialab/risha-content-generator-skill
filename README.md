@@ -49,6 +49,13 @@ This prevents the common failure modes where a workflow sends:
 
 If a media URL requires authentication or is not publicly downloadable, the helper will stop with a clear error instead of sending a bad file reference to Risha.
 
+The helper also avoids using:
+
+- `https://adminxcore-api.risha.ai/api/media/asset/...`
+- Cloudflare-style cache or proxy image URLs when a better public origin URL is available
+
+If the upload response does not include a real public asset URL, the helper now fails clearly instead of reusing a private or proxy URL.
+
 ## What Is Included
 
 - [`SKILL.md`](./SKILL.md): the skill instructions used by OpenClaw
